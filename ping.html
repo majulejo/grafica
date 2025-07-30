@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Análisis de Úlceras por Presión</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --secondary-color: #FF4081;
+            --background-color: #f5f5f5;
+            --text-color: #333;
+            --card-background: #fff;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--background-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--card-background);
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+        }
+
+        .camera-section {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .preview-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+            aspect-ratio: 4/3;
+            overflow: hidden;
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+        }
+
+        .preview-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(33, 150, 243, 0.3);
+        }
+
+        .analysis-results {
+            background: var(--card-background);
+            padding: 30px;
+            border-radius: 15px;
+            margin-top: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .result-item {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-left: 4px solid var(--primary-color);
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .container { padding: 10px; }
+            
+            .preview-container {
+                max-width: 100%;
+                aspect-ratio: auto;
+                height: 300px;
+            }
+
+            .camera-section {
+                padding: 15px;
+            }
+
+            header {
+                padding: 15px;
+            }
+
+            .analysis-results {
+                padding: 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            button {
+                flex: 1 1 calc(50% - 10px);
+                min-width: 120px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Análisis de Úlceras por Presión</h1>
+            <p>Sistema de diagnóstico móvil para cuidados médicos</p>
+        </header>
+
+        <main>
+            <section class="camera-section">
+                <input type="file" id="imageInput" accept="image/*" capture="environment">
+                
+                <div class="controls">
+                    <button id="analyzeButton">Analizar Imagen</button>
+                    <button id="clearButton">Limpiar</button>
+                </div>
+
+                <div class="preview-container">
+                    <img id="imagePreview" alt="Previsualización">
+                </div>
+            </section>
+
+            <section class="analysis-results" id="resultsSection">
+                <!-- Los resultados se insertarán aquí dinámicamente -->
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const imageInput = document.getElementById('imageInput');
+            const imagePreview = document.getElementById('imagePreview');
+            const analyzeButton = document.getElementById('analyzeButton');
+            const clearButton = document.getElementById('clearButton');
+            const resultsSection = document.getElementById('resultsSection');
+
+            // Inicializar el modelo ML con manejo de errores mejorado
+            let model;
+            try {
+                model = await tf.loadLayersModel('path/to/model.json');
+                console.log('Modelo cargado correctamente');
+            } catch (error) {
+                console.error('Error al cargar el modelo:', error);
+                alert('No se pudo cargar el modelo de análisis. Por favor, verifique su conexión.');
+                return;
+            }
+
+            // Manejo del archivo seleccionado o foto
+            imageInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    
+                    reader.onload = (event) => {
+                        imagePreview.src = event.target.result;
+                    };
+                    
+                    reader.onerror = () => {
+                        console.error('Error al leer la imagen');
+                        alert('Hubo un problema al procesar la imagen. Intente nuevamente.');
+                    };
+
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // Función principal de análisis con validaciones
+            async function analizarImagen(imgElement) {
+                if (!model || !imgElement.src) return null;
+
+                try {
+                    // Preprocesamiento de la imagen
+                    const tensor = tf.browser.fromPixels(imgElement);
+                    const resized = tf.image.resizeBilinear(tensor, [224, 224]);
+                    const normalized = resized.toFloat().div(255);
+                    const batched = normalized.reshape([1, 224, 224, 3]);
+
+                    // Realizar predicción
+                    const prediction = await model.predict(batched);
+
+                    // Obtener y formatear resultados
+                    const [gravedadScore, areaScore, profundidadScore] = prediction.dataSync();
+
+                    return {
+                        gravedad: obtenerGravedad(gravedadScore),
+                        area: `${Math.round(areaScore * 100)} cm²`,
+                        profundidad: determinarProfundidad(profundidadScore),
+                        recomendaciones: generarRecomendaciones(
+                            gravedadScore,
+                            profundidadScore
+                        )
+                    };
+                } catch (error) {
+                    console.error('Error en el análisis:', error);
+                    throw new Error('Error en el proceso de análisis');
+                }
+            }
+
+            // Botón de análisis con validación
+            analyzeButton.addEventListener('click', async () => {
+                if (!imagePreview.src) {
+                    alert('Por favor, seleccione una imagen primero');
+                    return;
+                }
+
+                try {
+                    const resultado = await analizarImagen(imagePreview);
+                    mostrarResultados(resultado);
+                } catch (error) {
+                    console.error('Error en el análisis:', error);
+                    alert('Hubo un error en el análisis. Por favor, intente nuevamente.');
+                }
+            });
+
+            // Botón de limpieza
+            clearButton.addEventListener('click', () => {
+                imageInput.value = '';
+                imagePreview.src = '';
+                resultsSection.innerHTML = '';
+            });
+        });
+
+        // Funciones auxiliares corregidas
+        function obtenerGravedad(score) {
+            if (score < 0.33) return 'Leve';
+            if (score < 0.66) return 'Moderada';
+            return 'Severa';
+        }
+
+        function determinarProfundidad(score) {
+            return score > 0.5 ? 'Profunda' : 'Superficial';
+        }
+
+        function generarRecomendaciones(gravedadScore, profundidadScore) {
+            const recomendaciones = [];
+            
+            if (gravedadScore < 0.33) {
+                recomendaciones.push(
+                    'Realizar cambios de posición cada 2 horas',
+                    'Monitorear temperatura local'
+                );
+            } else if (gravedadScore < 0.66) {
+                recomendaciones.push(
+                    'Cambios de posición cada hora',
+                    'Aplicar barrera protectora',
+                    'Evaluación diaria por enfermería especializada'
+                );
+            } else {
+                recomendaciones.push(
+                    'Monitoreo constante',
+                    'Derivación a equipo de cuidados especiales',
+                    'Documentación fotográfica diaria con mediciones'
+                );
+            }
+            
+            return recomendaciones;
+        }
+
+        function mostrarResultados(resultado) {
+            const template = `
+                <div class="result-item">
+                    <h2>Análisis Clínico</h2>
+                    <p><strong>Gravedad:</strong> ${resultado.gravedad}</p>
+                    <p><strong>Área Afectada:</strong> ${resultado.area}</p>
+                    <p><strong>Profundidad:</strong> ${resultado.profundidad}</p>
+                    <h3>Recomendaciones de Cuidado</h3>
+                    <ul>
+                        ${resultado.recomendaciones.map(rec => `<li>${rec}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+            resultsSection.innerHTML = template;
+        }
+    </script>
+</body>
+</html>
